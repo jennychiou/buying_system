@@ -27,7 +27,7 @@ if "edit_items" not in st.session_state:
     st.session_state.edit_items = []
 
 # 側邊欄 - 角色選擇
-role = st.sidebar.radio("選擇功能", ["管理後台", "商品訂購"])
+role = st.sidebar.radio("選擇功能", ["商品訂購", "管理後台"])
 
 # 老闆登出按鈕
 if role == "管理後台" and st.session_state.boss_authenticated:
