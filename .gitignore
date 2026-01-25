@@ -32,8 +32,8 @@ env/
 *.swp
 *.swo
 
-# Database
-*.db
+# Database (保留 group_buying.db 供部署使用)
+# *.db
 *.sqlite3
 
 # Environment variables
