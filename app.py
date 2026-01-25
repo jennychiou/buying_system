@@ -57,10 +57,10 @@ if role == "管理後台":
         
         st.stop()
     
-    tab1, tab2, tab3 = st.tabs(["建立團購單", "管理團購單", "訂單統計"])
+    tab1, tab2, tab3 = st.tabs(["訂單統計", "建立團購單", "管理團購單"])
     
     # ---- 建立團購單 ----
-    with tab1:
+    with tab2:
         st.subheader("建立新團購單")
         
         # 團購單基本資訊
@@ -124,7 +124,7 @@ if role == "管理後台":
                 st.rerun()
     
     # ---- 管理團購單 ----
-    with tab2:
+    with tab3:
         st.subheader("團購單列表")
         
         group_orders = db.get_all_group_orders()
@@ -313,13 +313,26 @@ if role == "管理後台":
             st.info("尚無團購單")
     
     # ---- 訂單統計 ----
-    with tab3:
+    with tab1:
         st.subheader("訂單統計")
         
         group_orders = db.get_all_group_orders()
         
         if group_orders:
-            order_options = {o['title']: o['id'] for o in group_orders}
+            # 在選項中顯示開放時間
+            def format_order_option(o):
+                title = o['title']
+                start = o['start_time'] or ''
+                end = o['end_time'] or ''
+                if start and end:
+                    return f"{title} ({start} ~ {end})"
+                elif start:
+                    return f"{title} ({start} 起)"
+                elif end:
+                    return f"{title} (~ {end})"
+                return title
+            
+            order_options = {format_order_option(o): o['id'] for o in group_orders}
             selected_order = st.selectbox("選擇團購單", options=list(order_options.keys()), key="stats_order")
             
             if selected_order:
@@ -389,7 +402,25 @@ if role == "管理後台":
                 
                 if customer_orders:
                     for co in customer_orders:
-                        with st.expander(f"{co['customer_name']} - ${co['total_amount'] or 0:,.0f}"):
+                        # 顯示付款狀態標記
+                        is_paid_val = co['is_paid'] if 'is_paid' in co.keys() else 0
+                        paid_status = "✅ " if is_paid_val else ""
+                        with st.expander(f"{paid_status}{co['customer_name']} - ${co['total_amount'] or 0:,.0f}"):
+                            # 取貨付款勾選框
+                            is_paid = st.checkbox(
+                                "已取貨付款",
+                                value=bool(is_paid_val),
+                                key=f"paid_{co['id']}"
+                            )
+                            if is_paid != bool(is_paid_val):
+                                db.update_customer_order_paid_status(co['id'], 1 if is_paid else 0)
+                                st.rerun()
+                            
+                            # 顯示備註
+                            note_val = co['note'] if 'note' in co.keys() else None
+                            if note_val:
+                                st.info(f"備註：{note_val}")
+                            
                             # 檢查是否正在編輯此訂單
                             if st.session_state.editing_order_id == co['id']:
                                 # 編輯模式
@@ -465,8 +496,20 @@ else:
         open_orders = db.get_open_group_orders()
         
         if open_orders:
-            # 選擇團購單
-            order_options = {o['title']: o['id'] for o in open_orders}
+            # 選擇團購單（顯示開放時間）
+            def format_order_option(o):
+                title = o['title']
+                start = o['start_time'] or ''
+                end = o['end_time'] or ''
+                if start and end:
+                    return f"{title} ({start} ~ {end})"
+                elif start:
+                    return f"{title} ({start} 起)"
+                elif end:
+                    return f"{title} (~ {end})"
+                return title
+            
+            order_options = {format_order_option(o): o['id'] for o in open_orders}
             selected_order = st.selectbox("選擇團購單", options=list(order_options.keys()), key="new_order_select")
             
             if selected_order:
@@ -514,6 +557,9 @@ else:
                     
                     st.divider()
                     
+                    # 備註欄位
+                    note = st.text_area("備註", placeholder="如有特殊需求請填寫", key="order_note")
+                    
                     # 顯示總計
                     st.metric("訂單總計", f"${total:,.0f}")
                     
@@ -524,7 +570,7 @@ else:
                         elif total == 0:
                             st.error("請至少選擇一項商品")
                         else:
-                            db.create_customer_order(order_id, customer_name, quantities)
+                            db.create_customer_order(order_id, customer_name, quantities, note)
                             st.success("訂單送出成功！")
                             st.balloons()
                 else:
@@ -538,7 +584,20 @@ else:
         open_orders = db.get_open_group_orders()
         
         if open_orders:
-            order_options = {o['title']: o['id'] for o in open_orders}
+            # 選擇團購單（顯示開放時間）
+            def format_order_option(o):
+                title = o['title']
+                start = o['start_time'] or ''
+                end = o['end_time'] or ''
+                if start and end:
+                    return f"{title} ({start} ~ {end})"
+                elif start:
+                    return f"{title} ({start} 起)"
+                elif end:
+                    return f"{title} (~ {end})"
+                return title
+            
+            order_options = {format_order_option(o): o['id'] for o in open_orders}
             selected_order = st.selectbox("選擇團購單", options=list(order_options.keys()), key="edit_order_select")
             
             if selected_order:

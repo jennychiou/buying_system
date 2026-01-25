@@ -71,6 +71,8 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 group_order_id INTEGER NOT NULL REFERENCES group_orders(id),
                 customer_name TEXT NOT NULL,
+                note TEXT,
+                is_paid INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -120,10 +122,20 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_order_id INTEGER NOT NULL,
                 customer_name TEXT NOT NULL,
+                note TEXT,
+                is_paid INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (group_order_id) REFERENCES group_orders(id)
             )
         """)
+        
+        # 檢查是否需要新增欄位 (相容舊資料庫)
+        cursor.execute("PRAGMA table_info(customer_orders)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'note' not in columns:
+            cursor.execute("ALTER TABLE customer_orders ADD COLUMN note TEXT")
+        if 'is_paid' not in columns:
+            cursor.execute("ALTER TABLE customer_orders ADD COLUMN is_paid INTEGER DEFAULT 0")
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS order_details (
@@ -307,7 +319,7 @@ def delete_item(item_id: int):
 
 # ============ 顧客訂單相關 ============
 
-def create_customer_order(group_order_id: int, customer_name: str, items_qty: dict) -> int:
+def create_customer_order(group_order_id: int, customer_name: str, items_qty: dict, note: str = "") -> int:
     """建立顧客訂單
     items_qty: {item_id: quantity}
     """
@@ -315,8 +327,8 @@ def create_customer_order(group_order_id: int, customer_name: str, items_qty: di
     cursor = conn.cursor()
     
     cursor.execute(
-        _sql("INSERT INTO customer_orders (group_order_id, customer_name) VALUES (?, ?)"),
-        (group_order_id, customer_name)
+        _sql("INSERT INTO customer_orders (group_order_id, customer_name, note) VALUES (?, ?, ?)"),
+        (group_order_id, customer_name, note)
     )
     customer_order_id = _get_last_id(cursor, conn, "customer_orders")
     
@@ -469,3 +481,12 @@ def get_order_details_as_dict(customer_order_id: int):
     if USE_CLOUD_SQL:
         return {d['item_id']: d['quantity'] for d in details}
     return {d['item_id']: d['quantity'] for d in details}
+
+
+def update_customer_order_paid_status(customer_order_id: int, is_paid: int):
+    """更新顧客訂單的付款狀態"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(_sql("UPDATE customer_orders SET is_paid = ? WHERE id = ?"), (is_paid, customer_order_id))
+    conn.commit()
+    conn.close()
