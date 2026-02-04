@@ -401,7 +401,25 @@ if role == "管理後台":
                 customer_orders = db.get_customer_orders_by_group(order_id)
                 
                 if customer_orders:
-                    for co in customer_orders:
+                    # 搜尋功能
+                    search_name = st.text_input(
+                        "搜尋顧客姓名",
+                        placeholder="輸入姓名進行篩選...",
+                        key=f"search_customer_{order_id}"
+                    )
+                    
+                    # 篩選訂單
+                    if search_name:
+                        filtered_orders = [co for co in customer_orders if search_name.lower() in co['customer_name'].lower()]
+                        if filtered_orders:
+                            st.caption(f"找到 {len(filtered_orders)} 筆符合的訂單")
+                        else:
+                            st.warning(f"找不到包含「{search_name}」的顧客")
+                    else:
+                        filtered_orders = customer_orders
+                    
+                    # 顯示訂單
+                    for co in filtered_orders:
                         # 顯示付款狀態標記
                         is_paid_val = co['is_paid'] if 'is_paid' in co.keys() else 0
                         paid_status = "✅ " if is_paid_val else ""
