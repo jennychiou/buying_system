@@ -17,9 +17,13 @@ EXCEL_PATH = r'C:\Users\OFFICE\Downloads\年菜115年2.xlsx'
 GROUP_ORDER_ID = 3  # 請填入要匯入的團購單 ID，例如: 1
 
 # 欄位對應 - 根據 Excel 欄位順序對應到資料庫品項
-# 例如: 第1欄是姓名，第2欄之後是各品項數量
+# 例如: 第1欄是姓名，第2欄之後是各品項數量，最後一欄是備註
 CUSTOMER_NAME_COLUMN = 0  # 姓名在第幾欄 (0 = 第1欄)
 ITEMS_START_COLUMN = 1     # 品項數量從第幾欄開始 (1 = 第2欄)
+NOTE_COLUMN = -1           # 備註在第幾欄 (-1 = 最後一欄, None = 沒有備註欄)
+
+# 匯入模式
+UPDATE_MODE = True  # True = 更新現有訂單（不重複建立）, False = 新增訂單
 # ============================
 
 def main():
@@ -56,8 +60,17 @@ def main():
     for i, item in enumerate(items, 1):
         print(f"  {i}. {item['name']} (${item['price']})")
     
+    # 計算預期欄位數
+    if NOTE_COLUMN is not None:
+        # 有備註欄: 姓名 + 品項數量 + 備註
+        expected_columns = ITEMS_START_COLUMN + len(items) + 1
+        print(f"\n欄位配置: 姓名 + {len(items)}個品項 + 備註")
+    else:
+        # 沒有備註欄: 姓名 + 品項數量
+        expected_columns = ITEMS_START_COLUMN + len(items)
+        print(f"\n欄位配置: 姓名 + {len(items)}個品項")
+    
     # 檢查欄位數量
-    expected_columns = ITEMS_START_COLUMN + len(items)
     if len(df.columns) < expected_columns:
         print(f"\n警告: Excel 欄位數 ({len(df.columns)}) 少於預期 ({expected_columns})")
         print("Excel 欄位:")
@@ -68,9 +81,15 @@ def main():
             return
     
     # 開始匯入
-    print(f"\n開始匯入資料...")
+    if UPDATE_MODE:
+        print(f"\n【更新模式】開始更新現有訂單...")
+    else:
+        print(f"\n【新增模式】開始匯入資料...")
+    
     success_count = 0
     error_count = 0
+    update_count = 0
+    create_count = 0
     
     for idx, row in df.iterrows():
         try:
@@ -100,14 +119,70 @@ def main():
                 else:
                     items_qty[item['id']] = 0
             
+            # 取得備註
+            note = ""
+            if NOTE_COLUMN is not None:
+                if NOTE_COLUMN == -1:
+                    # 最後一欄
+                    note_value = row.iloc[-1]
+                else:
+                    # 指定欄位
+                    if NOTE_COLUMN < len(row):
+                        note_value = row.iloc[NOTE_COLUMN]
+                    else:
+                        note_value = None
+                
+                if pd.notna(note_value):
+                    note = str(note_value).strip()
+            
             # 跳過沒有訂購任何品項的訂單
             if total_qty == 0:
                 continue
             
-            # 建立訂單
-            order_id = db.create_customer_order(GROUP_ORDER_ID, customer_name, items_qty, note="")
-            success_count += 1
-            print(f"  ✓ {customer_name}: 總數量 {total_qty} (訂單 ID={order_id})")
+            if UPDATE_MODE:
+                # 更新模式：檢查是否已存在此姓名的訂單
+                existing_orders = db.get_customer_orders_by_name(GROUP_ORDER_ID, customer_name)
+                
+                if existing_orders:
+                    # 更新第一筆訂單（如果有多筆，只更新第一筆）
+                    existing_order = existing_orders[0]
+                    order_id = existing_order['id']
+                    
+                    # 更新訂單內容
+                    db.update_customer_order(order_id, items_qty)
+                    
+                    # 更新備註
+                    if note:
+                        conn = db.get_connection()
+                        cursor = conn.cursor()
+                        cursor.execute(db._sql("UPDATE customer_orders SET note = ? WHERE id = ?"), (note, order_id))
+                        conn.commit()
+                        conn.close()
+                    
+                    update_count += 1
+                    success_count += 1
+                    if note:
+                        print(f"  ↻ {customer_name}: 已更新，總數量 {total_qty}, 備註: {note[:20]}... (訂單 ID={order_id})")
+                    else:
+                        print(f"  ↻ {customer_name}: 已更新，總數量 {total_qty} (訂單 ID={order_id})")
+                else:
+                    # 不存在則建立新訂單
+                    order_id = db.create_customer_order(GROUP_ORDER_ID, customer_name, items_qty, note=note)
+                    create_count += 1
+                    success_count += 1
+                    if note:
+                        print(f"  ✓ {customer_name}: 新增訂單，總數量 {total_qty}, 備註: {note[:20]}... (訂單 ID={order_id})")
+                    else:
+                        print(f"  ✓ {customer_name}: 新增訂單，總數量 {total_qty} (訂單 ID={order_id})")
+            else:
+                # 新增模式：直接建立訂單
+                order_id = db.create_customer_order(GROUP_ORDER_ID, customer_name, items_qty, note=note)
+                create_count += 1
+                success_count += 1
+                if note:
+                    print(f"  ✓ {customer_name}: 總數量 {total_qty}, 備註: {note[:20]}... (訂單 ID={order_id})")
+                else:
+                    print(f"  ✓ {customer_name}: 總數量 {total_qty} (訂單 ID={order_id})")
             
         except Exception as e:
             error_count += 1
@@ -115,7 +190,11 @@ def main():
     
     print("\n" + "=" * 70)
     print(f"匯入完成!")
-    print(f"  成功: {success_count} 筆")
+    if UPDATE_MODE:
+        print(f"  更新: {update_count} 筆")
+        print(f"  新增: {create_count} 筆")
+    else:
+        print(f"  新增: {create_count} 筆")
     print(f"  失敗: {error_count} 筆")
     print("=" * 70)
 
