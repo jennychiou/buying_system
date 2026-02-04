@@ -194,7 +194,7 @@ if role == "管理後台":
                                         st.rerun()
                             else:
                                 # 顯示模式
-                                st.write(f"**{order['title']}**")
+                                st.write(f"**{order['title']}** (ID: {order['id']})")
                                 st.write(f"說明：{order['description'] or '無'}")
                                 st.write(f"開放時間：{order['start_time'] or '無'} ~ {order['end_time'] or '無'}")
                                 
@@ -282,7 +282,7 @@ if role == "管理後台":
                                         st.rerun()
                             else:
                                 # 顯示模式
-                                st.write(f"**{order['title']}**")
+                                st.write(f"**{order['title']}** (ID: {order['id']})")
                                 st.write(f"說明：{order['description'] or '無'}")
                                 st.write(f"開放時間：{order['start_time'] or '無'} ~ {order['end_time'] or '無'}")
                                 
